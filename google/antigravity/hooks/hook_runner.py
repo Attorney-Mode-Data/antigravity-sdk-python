@@ -30,9 +30,6 @@ class HookRunner:
       on_session_end_hooks: list[hooks_base.OnSessionEndHook] | None = None,
       pre_turn_hooks: list[hooks_base.PreTurnHook] | None = None,
       post_turn_hooks: list[hooks_base.PostTurnHook] | None = None,
-      pre_model_call_hooks: list[hooks_base.PreModelCallHook] | None = None,
-      on_model_chunk_hooks: list[hooks_base.OnModelChunkHook] | None = None,
-      post_model_call_hooks: list[hooks_base.PostModelCallHook] | None = None,
       pre_tool_call_transform_hooks: (
           list[hooks_base.PreToolCallTransformHook] | None
       ) = None,
@@ -48,9 +45,6 @@ class HookRunner:
     self.on_session_end_hooks = on_session_end_hooks or []
     self.pre_turn_hooks = pre_turn_hooks or []
     self.post_turn_hooks = post_turn_hooks or []
-    self.pre_model_call_hooks = pre_model_call_hooks or []
-    self.on_model_chunk_hooks = on_model_chunk_hooks or []
-    self.post_model_call_hooks = post_model_call_hooks or []
     self.pre_tool_call_transform_hooks = pre_tool_call_transform_hooks or []
     self.pre_tool_call_decide_hooks = pre_tool_call_decide_hooks or []
     self.post_tool_call_hooks = post_tool_call_hooks or []
@@ -68,9 +62,6 @@ class HookRunner:
         self.on_session_end_hooks,
         self.pre_turn_hooks,
         self.post_turn_hooks,
-        self.pre_model_call_hooks,
-        self.on_model_chunk_hooks,
-        self.post_model_call_hooks,
         self.pre_tool_call_transform_hooks,
         self.pre_tool_call_decide_hooks,
         self.post_tool_call_hooks,
@@ -89,12 +80,6 @@ class HookRunner:
       self.pre_turn_hooks.append(hook)
     elif isinstance(hook, hooks_base.PostTurnHook):
       self.post_turn_hooks.append(hook)
-    elif isinstance(hook, hooks_base.PreModelCallHook):
-      self.pre_model_call_hooks.append(hook)
-    elif isinstance(hook, hooks_base.PostModelCallHook):
-      self.post_model_call_hooks.append(hook)
-    elif isinstance(hook, hooks_base.OnModelChunkHook):
-      self.on_model_chunk_hooks.append(hook)
     elif isinstance(hook, hooks_base.PreToolCallDecideHook):
       self.pre_tool_call_decide_hooks.append(hook)
     elif isinstance(hook, hooks_base.PreToolCallTransformHook):
@@ -139,48 +124,6 @@ class HookRunner:
     """Dispatches post-turn events."""
     for hook in self.post_turn_hooks:
       await hook.run(context=turn_context, data=response)
-
-  # Model
-  async def dispatch_pre_model_call(
-      self, op_context: hooks_base.OperationContext, data: dict[str, Any]
-  ) -> tuple[hooks_base.HookResult, dict[str, Any]]:
-    """Dispatches pre-model call events (Transform)."""
-    for hook in self.pre_model_call_hooks:
-      try:
-        data = await hook.run(context=op_context, data=data)
-      except Exception as e:
-        logging.exception("Critical failure in PreModelCallHook")
-        return (
-            hooks_base.HookResult(
-                allow=False, message=f"Transform failed: {e}"
-            ),
-            data,
-        )
-    return hooks_base.HookResult(allow=True), data
-
-  async def dispatch_post_model_call(
-      self, op_context: hooks_base.OperationContext, response: Any
-  ) -> tuple[hooks_base.HookResult, Any]:
-    """Dispatches post-model call events (Transform)."""
-    for hook in self.post_model_call_hooks:
-      try:
-        response = await hook.run(context=op_context, data=response)
-      except Exception as e:
-        logging.exception("Critical failure in PostModelCallHook")
-        return (
-            hooks_base.HookResult(
-                allow=False, message=f"Transform failed: {e}"
-            ),
-            response,
-        )
-    return hooks_base.HookResult(allow=True), response
-
-  async def dispatch_model_chunk(
-      self, op_context: hooks_base.OperationContext, chunk: Any
-  ) -> None:
-    """Dispatches model chunk events (Inspect)."""
-    for hook in self.on_model_chunk_hooks:
-      await hook.run(context=op_context, data=chunk)
 
   # Tool
   async def dispatch_pre_tool_call(

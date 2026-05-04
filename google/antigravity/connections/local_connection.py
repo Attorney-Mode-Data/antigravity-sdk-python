@@ -115,6 +115,7 @@ class LocalConnectionStep(types.Step):
   trajectory_id: str = ""
   target: str = ""
 
+
   @classmethod
   def from_dict(cls, step_dict: dict[str, Any]) -> "LocalConnectionStep":
     """Creates a LocalConnectionStep from a dictionary representation of StepUpdate."""
@@ -197,6 +198,7 @@ class LocalConnectionStep(types.Step):
         is_final_response=is_final_response,
         target=step_dict.get("target", ""),
         structured_output=structured_output,
+
     )
 
 
@@ -246,17 +248,6 @@ class LocalConnection(connection.Connection):
       hook_runner: h_runner.HookRunner | None = None,
   ):
     self._hook_runner = hook_runner
-    if self._hook_runner:
-      if (
-          self._hook_runner.pre_model_call_hooks
-          or self._hook_runner.post_model_call_hooks
-          or self._hook_runner.on_model_chunk_hooks
-      ):
-        raise NotImplementedError(
-            "Model hooks (PreModelCall, PostModelCall, OnModelChunk) are not"
-            " supported by LocalConnection. Model calls happen inside the Go"
-            " harness and are not observable from the SDK."
-        )
     self._process = process
     self._ws = ws
     self._tool_runner = tool_runner
@@ -285,6 +276,7 @@ class LocalConnection(connection.Connection):
     # We store the cascade_id so TrajectoryStateUpdate (which lacks the
     # field) can distinguish parent vs. subagent trajectories.
     self._cascade_id: str | None = None
+
 
     # Dispatch session start hook.
     if self._hook_runner and self._hook_runner.on_session_start_hooks:
@@ -503,6 +495,8 @@ class LocalConnection(connection.Connection):
                 step_obj.content
             )
 
+
+
           # 4. Process wait requests if this is a wait state
           if (
               step_update.state
@@ -705,6 +699,7 @@ class LocalConnection(connection.Connection):
           turn_context=ctx, tool_call=tc
       )
       allow = res.allow
+
 
     resp = localharness_pb2.ToolConfirmation(
         trajectory_id=step_update.trajectory_id,

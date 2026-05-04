@@ -24,7 +24,6 @@ from typing import Any, Optional
 
 from google.antigravity.types import AskQuestionInteractionSpec
 from google.antigravity.types import HookResult
-from google.antigravity.types import ModelCallInput
 from google.antigravity.types import QuestionHookResult
 
 # --- Contexts ---
@@ -150,38 +149,6 @@ class PreTurnHook(DecideHook):
 
 class PostTurnHook(InspectHook):
   """Invoked after a turn ends."""
-
-  pass
-
-
-# Model
-class PreModelCallHook(TransformHook):
-  """Invoked before a model call."""
-
-  @abc.abstractmethod
-  async def run(
-      self, context: HookContext, data: ModelCallInput
-  ) -> ModelCallInput:
-    """Runs the pre-model call hook.
-
-    Args:
-      context: The hook context.
-      data: The model call input.
-
-    Returns:
-      The transformed model call input.
-    """
-    pass
-
-
-class PostModelCallHook(TransformHook):
-  """Invoked after a model call with the full buffered response."""
-
-  pass
-
-
-class OnModelChunkHook(InspectHook):
-  """Invoked when a model chunk is received during streaming."""
 
   pass
 

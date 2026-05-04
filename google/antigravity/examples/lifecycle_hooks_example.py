@@ -36,8 +36,10 @@ Subagent hooks:
   the subagent tool name to demonstrate per-subagent lifecycle
   observability.
 
-Not supported by LocalConnection (handled by the Go harness):
-  - PreModelCallHook, PostModelCallHook, OnModelChunkHook
+Observing model responses:
+  To observe model-generated text, use PostTurnHook (which receives
+  the final response after each turn) or inspect conversation.history
+  for the full step-by-step trajectory.
 
 To run:
   bazel run //examples:lifecycle_hooks

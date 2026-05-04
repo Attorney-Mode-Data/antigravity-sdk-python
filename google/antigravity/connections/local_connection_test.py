@@ -1947,68 +1947,6 @@ class LocalConnectionToolCallHooksTest(unittest.IsolatedAsyncioTestCase):
     self.assertIn("recovered_value", sent_data["toolResponse"]["responseJson"])
 
 
-class LocalConnectionModelHooksErrorTest(unittest.TestCase):
-  """Verifies that model hooks still raise NotImplementedError."""
-
-  def setUp(self):
-    super().setUp()
-    self.mock_process = mock.MagicMock()
-    self.mock_ws = FakeWebSocket()
-
-  def test_pre_model_call_hook_raises(self):
-    """Pre-model-call hooks are not supported by LocalConnection."""
-
-    class DummyHook:
-
-      async def run(self, context, data):  # pylint: disable=unused-argument
-        pass
-
-    hr = hook_runner.HookRunner()
-    hr.pre_model_call_hooks.append(DummyHook())
-
-    with self.assertRaises(NotImplementedError):
-      local_connection.LocalConnection(
-          process=self.mock_process,
-          ws=self.mock_ws,
-          hook_runner=hr,
-      )
-
-  def test_post_model_call_hook_raises(self):
-    """Post-model-call hooks are not supported by LocalConnection."""
-
-    class DummyHook:
-
-      async def run(self, context, data):  # pylint: disable=unused-argument
-        pass
-
-    hr = hook_runner.HookRunner()
-    hr.post_model_call_hooks.append(DummyHook())
-
-    with self.assertRaises(NotImplementedError):
-      local_connection.LocalConnection(
-          process=self.mock_process,
-          ws=self.mock_ws,
-          hook_runner=hr,
-      )
-
-  def test_on_model_chunk_hook_raises(self):
-    """On-model-chunk hooks are not supported by LocalConnection."""
-
-    class DummyHook:
-
-      async def run(self, context, data):  # pylint: disable=unused-argument
-        pass
-
-    hr = hook_runner.HookRunner()
-    hr.on_model_chunk_hooks.append(DummyHook())
-
-    with self.assertRaises(NotImplementedError):
-      local_connection.LocalConnection(
-          process=self.mock_process,
-          ws=self.mock_ws,
-          hook_runner=hr,
-      )
-
 
 class LocalConnectionHookAcceptanceTest(unittest.IsolatedAsyncioTestCase):
   """Verifies that previously-unsupported hooks are now accepted."""

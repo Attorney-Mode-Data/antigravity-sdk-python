@@ -22,7 +22,7 @@ three strict categories:
 -   **Behavior**: They receive data but cannot modify it. They cannot block
     execution. They are executed asynchronously or concurrently without delaying
     the main flow.
--   **Examples**: `PostToolCallHook`, `OnModelChunkHook`.
+-   **Examples**: `PostToolCallHook`.
 
 ### 2. Decide Hooks (Read-Only, Blocking)
 
@@ -39,8 +39,8 @@ three strict categories:
 -   **Behavior**: They receive data, can modify it, and must return the
     (potentially modified) data. They can also fail, triggering a fail-closed
     behavior.
--   **Examples**: `PreModelCallHook`, `PostModelCallHook`,
-    `PreToolCallTransformHook`, `OnToolErrorHook`, `OnInteractionHook`.
+-   **Examples**: `PreToolCallTransformHook`, `OnToolErrorHook`,
+    `OnInteractionHook`.
 
 ## Execution Order and Security (TOCTOU)
 
@@ -74,15 +74,14 @@ This hierarchy ensures that state set in a broader scope is visible to narrower
 scopes, but not from narrower to broader scopes, preventing cross-talk and
 ensuring proper cleanup.
 
-## Streaming Support
+## Observing Model Responses
 
-To support real-time UI updates and logging during model response generation,
-the system supports streaming chunks:
+To observe model-generated text:
 
--   **`OnModelChunkHook`**: An Inspect Hook that receives chunks of the model
-    response as they arrive.
--   **`PostModelCallHook`**: A Transform Hook that receives the full buffered
-    response after completion, allowing for final modification or sanitization.
+-   Use **`PostTurnHook`**, which receives the complete model response after
+    each agent turn completes.
+-   Inspect **`conversation.history`** for the full step-by-step trajectory,
+    including intermediate model steps.
 
 ## Fail-Safe Strategy
 

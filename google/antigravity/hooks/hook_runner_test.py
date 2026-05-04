@@ -52,23 +52,6 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
     self.assertFalse(res.allow)
     self.assertEqual(res.message, "Denied")
 
-  async def test_dispatch_model_chunk(self):
-
-    class DummyChunkHook(hooks.OnModelChunkHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> None:
-        data["chunks"].append(context.get("chunk_value"))
-
-    runner = hook_runner.HookRunner(on_model_chunk_hooks=[DummyChunkHook()])
-    turn_context = hooks.TurnContext(runner.session_context)
-    op_context = hooks.OperationContext(turn_context)
-    op_context.set("chunk_value", "data_from_ctx")
-
-    data = {"chunks": []}
-    await runner.dispatch_model_chunk(op_context, data)
-
-    self.assertEqual(data["chunks"], ["data_from_ctx"])
-
   async def test_dispatch_session_start(self):
     called = False
 
@@ -256,16 +239,6 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
       ) -> hooks.HookResult:
         return hooks.HookResult(allow=True)
 
-    class DummyPreModelCallHook(hooks.PreModelCallHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> Any:
-        return data
-
-    class DummyPostModelCallHook(hooks.PostModelCallHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> Any:
-        return data
-
     class DummyOnToolErrorHook(hooks.OnToolErrorHook):
 
       async def run(self, context: hooks.HookContext, data: Any) -> Any:
@@ -282,11 +255,6 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
         pass
 
     class DummyPostTurnHook(hooks.PostTurnHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> None:
-        pass
-
-    class DummyOnModelChunkHook(hooks.OnModelChunkHook):
 
       async def run(self, context: hooks.HookContext, data: Any) -> None:
         pass
@@ -317,13 +285,10 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
 
     session_start_hook = DummyOnSessionStartHook()
     pre_turn_hook = DummyPreTurnHook()
-    pre_model_call_hook = DummyPreModelCallHook()
-    post_model_call_hook = DummyPostModelCallHook()
     on_tool_error_hook = DummyOnToolErrorHook()
     session_end_hook = DummyOnSessionEndHook()
     interaction_hook = DummyOnInteractionHook()
     post_turn_hook = DummyPostTurnHook()
-    model_chunk_hook = DummyOnModelChunkHook()
     decide_hook = DummyPreToolCallDecideHook()
     transform_hook = DummyPreToolCallTransformHook()
     post_tool_call_hook = DummyPostToolCallHook()
@@ -331,13 +296,10 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
 
     runner.register_hook(session_start_hook)
     runner.register_hook(pre_turn_hook)
-    runner.register_hook(pre_model_call_hook)
-    runner.register_hook(post_model_call_hook)
     runner.register_hook(on_tool_error_hook)
     runner.register_hook(session_end_hook)
     runner.register_hook(interaction_hook)
     runner.register_hook(post_turn_hook)
-    runner.register_hook(model_chunk_hook)
     runner.register_hook(decide_hook)
     runner.register_hook(transform_hook)
     runner.register_hook(post_tool_call_hook)
@@ -345,13 +307,10 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
 
     self.assertIn(session_start_hook, runner.on_session_start_hooks)
     self.assertIn(pre_turn_hook, runner.pre_turn_hooks)
-    self.assertIn(pre_model_call_hook, runner.pre_model_call_hooks)
-    self.assertIn(post_model_call_hook, runner.post_model_call_hooks)
     self.assertIn(on_tool_error_hook, runner.on_tool_error_hooks)
     self.assertIn(session_end_hook, runner.on_session_end_hooks)
     self.assertIn(interaction_hook, runner.on_interaction_hooks)
     self.assertIn(post_turn_hook, runner.post_turn_hooks)
-    self.assertIn(model_chunk_hook, runner.on_model_chunk_hooks)
     self.assertIn(decide_hook, runner.pre_tool_call_decide_hooks)
     self.assertIn(transform_hook, runner.pre_tool_call_transform_hooks)
     self.assertIn(post_tool_call_hook, runner.post_tool_call_hooks)
@@ -373,37 +332,6 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
     turn_context = hooks.TurnContext(runner.session_context)
     await runner.dispatch_post_turn(turn_context, "response")
     self.assertTrue(called)
-
-  async def test_dispatch_pre_model_call(self):
-
-    class DummyHook(hooks.PreModelCallHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> Any:
-        data["hook_called"] = True
-        return data
-
-    runner = hook_runner.HookRunner(pre_model_call_hooks=[DummyHook()])
-    turn_context = hooks.TurnContext(runner.session_context)
-    op_context = hooks.OperationContext(turn_context)
-    res, data = await runner.dispatch_pre_model_call(op_context, {})
-    self.assertTrue(res.allow)
-    self.assertTrue(data.get("hook_called"))
-
-  async def test_dispatch_post_model_call(self):
-
-    class DummyHook(hooks.PostModelCallHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> Any:
-        return data + "_transformed"
-
-    runner = hook_runner.HookRunner(post_model_call_hooks=[DummyHook()])
-    turn_context = hooks.TurnContext(runner.session_context)
-    op_context = hooks.OperationContext(turn_context)
-    res, response = await runner.dispatch_post_model_call(
-        op_context, "raw_response"
-    )
-    self.assertTrue(res.allow)
-    self.assertEqual(response, "raw_response_transformed")
 
   async def test_dispatch_post_tool_call(self):
     called = False
@@ -477,35 +405,21 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
     self.assertIsNone(data)
 
   async def test_dispatch_pre_model_call_exception(self):
+    """Verifies that unknown hook types raise ValueError.
 
-    class FailHook(hooks.PreModelCallHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> Any:
-        raise ValueError("Fail")
-
-    runner = hook_runner.HookRunner(pre_model_call_hooks=[FailHook()])
-    turn_context = hooks.TurnContext(runner.session_context)
-    op_context = hooks.OperationContext(turn_context)
-    res, _ = await runner.dispatch_pre_model_call(op_context, {})
-    self.assertFalse(res.allow)
-    self.assertIn("Transform failed", res.message)
-
-  async def test_dispatch_post_model_call_exception(self):
-
-    class FailHook(hooks.PostModelCallHook):
-
-      async def run(self, context: hooks.HookContext, data: Any) -> Any:
-        raise ValueError("Fail")
-
-    runner = hook_runner.HookRunner(post_model_call_hooks=[FailHook()])
-    turn_context = hooks.TurnContext(runner.session_context)
-    op_context = hooks.OperationContext(turn_context)
-    res, _ = await runner.dispatch_post_model_call(op_context, "response")
-    self.assertFalse(res.allow)
-    self.assertIn("Transform failed", res.message)
+    This test ensures the register_hook method correctly rejects objects
+    that do not inherit from any known hook base class.
+    """
+    runner = hook_runner.HookRunner()
+    with self.assertRaises(ValueError):
+      runner.register_hook(42)
 
   async def test_base_class_calls(self):
-    """Verifies default pass implementations in base hook classes."""
+    """Verifies default pass implementations in base hook classes.
+
+    Ensures that calling super().run() on every non-abstract hook base
+    class does not raise, validating the no-op default behavior.
+    """
 
     class DummyInspectHook(hooks.OnSessionStartHook):
 
@@ -520,17 +434,9 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
         await super().run(context, data)
         return types.HookResult(allow=True)
 
-    class DummyTransformHook(hooks.PostModelCallHook):
+    class DummyTransformHook(hooks.OnToolErrorHook):
 
       async def run(self, context: hooks.HookContext, data: Any) -> Any:
-        await super().run(context, data)
-        return data
-
-    class DummyPreModelCallHookReal(hooks.PreModelCallHook):
-
-      async def run(
-          self, context: hooks.HookContext, data: types.ModelCallInput
-      ) -> types.ModelCallInput:
         await super().run(context, data)
         return data
 
@@ -544,9 +450,6 @@ class HookRunnerTest(unittest.IsolatedAsyncioTestCase):
     await DummyInspectHook().run(ctx, None)
     await DummyDecideHook().run(ctx, None)
     await DummyTransformHook().run(ctx, {})
-    await DummyPreModelCallHookReal().run(
-        ctx, types.ModelCallInput(contents=[""])
-    )
     await DummyInteractionHook().run(
         ctx, types.AskQuestionInteractionSpec(questions=[])
     )

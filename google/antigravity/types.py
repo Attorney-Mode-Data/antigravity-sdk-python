@@ -364,15 +364,6 @@ class Step(pydantic.BaseModel):
   model_config = pydantic.ConfigDict(extra="allow")
 
 
-class ModelCallInput(pydantic.BaseModel):
-  """Input for a model call."""
-
-  model_config = pydantic.ConfigDict(extra="ignore")
-
-  contents: list[Any]
-  config: dict[str, Any] | None = None
-
-
 # =============================================================================
 # Hook types
 # =============================================================================

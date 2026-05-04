@@ -428,17 +428,6 @@ class AskQuestionModelsTest(unittest.TestCase):
     self.assertEqual(len(spec.questions), 1)
 
 
-class ModelCallInputTest(unittest.TestCase):
-  """Tests for ModelCallInput model."""
-
-  def test_model_call_input(self):
-    input_data = types.ModelCallInput(
-        contents=["hello"], config={"temperature": 0.7}
-    )
-    self.assertEqual(input_data.contents, ["hello"])
-    self.assertEqual(input_data.config, {"temperature": 0.7})
-
-
 class ThinkingLevelTest(unittest.TestCase):
   """Tests for the ThinkingLevel enum."""
 
