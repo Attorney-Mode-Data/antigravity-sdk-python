@@ -169,21 +169,16 @@ class ToolRunnerTest(absltest.TestCase):
     self.assertIn("_sample_tool", runner.tool_names)
     self.assertIn("_async_tool", runner.tool_names)
 
-  def test_execute_tool_failure_returns_string(self):
-    """Verifies exception isolation during tool execution.
-
-    What: Checks that tool internal crashes are caught and returned as strings.
-    Why: Prevents a single tool crash from terminating the runner or agent.
-    How: Executes a tool that raises ValueError and asserts the output string.
-    """
+  def test_execute_tool_failure_raises_exception(self):
+    """Verifies that tool internal crashes are propagated as exceptions."""
 
     def _failing_tool():
       raise ValueError("Something went wrong")
 
     runner = tool_runner.ToolRunner([_failing_tool])
-    result = asyncio.run(runner.execute("_failing_tool"))
-    self.assertIn("Error executing tool '_failing_tool'", result)
-    self.assertIn("Something went wrong", result)
+    with self.assertRaises(ValueError) as cm:
+      asyncio.run(runner.execute("_failing_tool"))
+    self.assertEqual(str(cm.exception), "Something went wrong")
 
   def test_tool_with_schema_sync(self):
     """Verifies ToolWithSchema with a synchronous callable.

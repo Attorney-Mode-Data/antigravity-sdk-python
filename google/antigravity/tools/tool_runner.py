@@ -268,10 +268,7 @@ class ToolRunner:
 
     tool_fn = self._tools[tool_name]
     kwargs = self._inject_context(tool_name, kwargs)
-    try:
-      return await self._execute_fn(tool_fn, **kwargs)
-    except Exception as e:  # pylint: disable=broad-except
-      return f"Error executing tool '{tool_name}': {e}"
+    return await self._execute_fn(tool_fn, **kwargs)
 
   async def process_tool_calls(
       self,
