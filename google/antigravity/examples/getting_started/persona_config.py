@@ -24,10 +24,12 @@ specific identity and adding application-specific guidelines. This ensures the
 agent remains focused and organized without requiring you to recreate complex
 infrastructure-level instructions from scratch.
 
-Custom instructions, on the other hand, are for advanced use cases where you
-need complete control over the system prompt and want to bypass the default SDK
-instructions entirely. This is useful when you need a highly specialized persona
-or strict output formatting rules that differ from the defaults.
+Custom instructions, on the other hand, are NOT recommended for most users
+because they completely bypass the default SDK scaffolding and dynamic
+environmental context (such as active workspaces, available skills, and subagent
+coordination rules). This is a 'break glass' advanced feature where you must
+take full responsibility for manually compiling all environment and dynamic
+paths inside Python if they are needed by your custom System Prompt.
 
 This example demonstrates:
 1. Using TemplatedSystemInstructions to override identity and add sections.
@@ -36,6 +38,8 @@ This example demonstrates:
 """
 
 import asyncio
+import os
+import sys
 from google.antigravity import agent
 from google.antigravity import types
 from google.antigravity.connections import local
@@ -101,17 +105,79 @@ async def run_templated_example():
     print(f"Agent: {await response.text()}\n")
 
 
+def _build_skills_instructions(skills_paths: list[str]) -> str:
+  """Compiles comparative skill guidelines using static placeholders."""
+  if not skills_paths:
+    return ""
+
+  instructions = "\n<skills>\n"
+  instructions += (
+      "Skills enhance your abilities with specialized expertise and"
+      " repeatable workflows to help solve advanced workflows.\n"
+  )
+  instructions += (
+      "When a task matches an available skill's description, you must inspect"
+      " the complete SKILL.md with your 'view_file' tool in order to understand"
+      " its capabilities.\n\n"
+  )
+  instructions += "Available skills:\n"
+  for path in skills_paths:
+    skill_name = os.path.basename(path)
+    # NOTE: In a production implementation, you would dynamically parse the
+    # 'description' field from the YAML frontmatter of the SKILL.md file on
+    # disk. To keep this example concise and standalone, we use a static
+    # description.
+    instructions += (
+        f"* **{skill_name}** (located at `{path}/SKILL.md`) — Provides"
+        " guidelines for code readability, style compliance, and refactoring.\n"
+    )
+  instructions += "</skills>\n"
+  return instructions
+
+
 async def run_custom_example():
-  """Demonstrates using CustomSystemInstructions with a full structured prompt."""
+  """Demonstrates using CustomSystemInstructions with a full structured prompt.
+
+  Overriding the system prompt completely removes the SDK's default scaffolding
+  and dynamic environmental context (such as active workspaces, available
+  skills, and subagent coordination rules).
+
+  This example shows how developers can dynamically compile this environmental
+  context (like current directory paths and active skill folders) directly
+  in Python when complete, raw control over the System Prompt is needed.
+  """
 
   print("=== Custom System Instructions Example ===")
 
-  # Full structured prompt
-  custom_si_text = """
+  # Static Identity/Persona
+  identity_text = """
 <identity>
 You are an expert Code Quality Reviewer agent. Your goal is to help developers maintain high standards of readability, maintainability, and correctness in their code. You will receive code snippets or descriptions of code changes and provide actionable feedback. You must always prioritize addressing the user's specific questions or concerns about the code.
 </identity>
+"""
 
+  # Dynamically gather workspace and app data directory info in Python.
+  # Under a complete override, the SDK's default environmental context is
+  # omitted, so we manually construct and inject this context string into the
+  # custom prompt.
+  cwd = os.getcwd()
+  app_data_dir = os.path.expanduser("~/.gemini/antigravity")
+  user_info = f"""
+<user_information>
+Operating System: {sys.platform}
+Active Workspace CWD: {cwd}
+Storage Directory (App Data): {app_data_dir}
+</user_information>
+"""
+
+  # Configure the active skill folders.
+  # By default in the SDK, configured skill paths are dynamically prepended to
+  # the turns. Under a custom override, we manually compile and append them.
+  skills = ["/path/to/my_skills/code_quality_reviewer_skill"]
+  skills_instructions = _build_skills_instructions(skills)
+
+  # Standard structured guidelines & formatting rules text
+  guidelines_text = """
 <review_guidelines>
 ### When to recommend refactoring:
 - The code has high cyclomatic complexity (too many nested loops/conditionals).
@@ -167,11 +233,19 @@ You have access to the `check_style_guide` tool. When reviewing Python code, alw
 </tool_usage>
 """
 
-  custom_si = types.CustomSystemInstructions(text=custom_si_text)
+  # Assemble the finalized custom system prompt string in Python,
+  # placing all static persona instructions, skills, and guidelines at the
+  # top, with the dynamic workspace environment (UserInfo) at the bottom.
+  final_si_prompt = (
+      identity_text + skills_instructions + guidelines_text + user_info
+  )
+
+  custom_si = types.CustomSystemInstructions(text=final_si_prompt)
 
   config = local.LocalAgentConfig(
       system_instructions=custom_si,
       tools=[check_style_guide],
+      skills_paths=skills,
   )
 
   async with agent.Agent(config) as my_agent:
