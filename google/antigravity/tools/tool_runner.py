@@ -31,6 +31,7 @@ injectable parameters so the model never sees them.
 import asyncio
 import functools
 import inspect
+import typing
 from typing import Any, Callable
 
 from google.antigravity import types
@@ -40,9 +41,9 @@ from google.antigravity.tools import tool_context as tool_context_module
 def _find_context_param(fn: Callable[..., Any]) -> str | None:
   """Returns the name of the ToolContext-typed parameter, if any.
 
-  Inspects the function signature for a parameter whose annotation
-  resolves to ``ToolContext``. Supports both live type annotations
-  and stringified annotations (``from __future__ import annotations``).
+  Uses ``typing.get_type_hints`` to resolve annotations — including
+  stringified ones from ``from __future__ import annotations`` — and
+  checks for an exact match against ``ToolContext``.
 
   Args:
     fn: The callable to inspect. If it's a ``ToolWithSchema``, the inner ``.fn``
@@ -53,21 +54,19 @@ def _find_context_param(fn: Callable[..., Any]) -> str | None:
   """
   target = fn.fn if isinstance(fn, ToolWithSchema) else fn
   try:
-    sig = inspect.signature(target)
-  except (ValueError, TypeError):
+    hints = typing.get_type_hints(target)
+  except (TypeError, NameError, AttributeError):
     return None
 
-  for name, param in sig.parameters.items():
-    ann = param.annotation
-    if ann is inspect.Parameter.empty:
+  for name, ann in hints.items():
+    if name == "return":
       continue
-    # Direct type check (most common case).
     if ann is tool_context_module.ToolContext:
       return name
-    # Handle stringified annotations and Optional/Union forms.
-    ann_str = str(ann)
-    if "ToolContext" in ann_str:
-      return name
+    # Handle Optional[ToolContext] / ToolContext | None forms.
+    if typing.get_origin(ann) is typing.Union:
+      if tool_context_module.ToolContext in typing.get_args(ann):
+        return name
   return None
 
 
@@ -111,6 +110,14 @@ class ToolWithSchema:
 
   def __call__(self, **kwargs: Any) -> Any:
     return self.fn(**kwargs)
+
+
+def _is_async(callable_obj: Any) -> bool:
+  """Returns True if the callable is async (coroutine function or __call__)."""
+  return inspect.iscoroutinefunction(callable_obj) or (
+      hasattr(callable_obj, "__call__")
+      and inspect.iscoroutinefunction(callable_obj.__call__)
+  )
 
 
 class ToolRunner:
@@ -213,14 +220,7 @@ class ToolRunner:
 
   async def _execute_fn(self, fn: Callable[..., Any], **kwargs: Any) -> Any:
     """Executes a callable, running sync functions in a separate thread."""
-
-    def is_async(callable_obj):
-      return inspect.iscoroutinefunction(callable_obj) or (
-          hasattr(callable_obj, "__call__")
-          and inspect.iscoroutinefunction(callable_obj.__call__)
-      )
-
-    if not is_async(fn):
+    if not _is_async(fn):
       result = await asyncio.to_thread(fn, **kwargs)
     else:
       result = fn(**kwargs)
@@ -232,7 +232,10 @@ class ToolRunner:
   def _inject_context(
       self, tool_name: str, kwargs: dict[str, Any]
   ) -> dict[str, Any]:
-    """Adds the ToolContext to kwargs if the tool requests it.
+    """Returns kwargs augmented with ToolContext if the tool requests it.
+
+    Returns a new dict when injection occurs; returns the original
+    dict unchanged otherwise (no unnecessary copies).
 
     Args:
       tool_name: The registered tool name.
@@ -244,7 +247,7 @@ class ToolRunner:
     ctx_param = self._context_params.get(tool_name)
     if ctx_param is not None and self._context is not None:
       if ctx_param not in kwargs:
-        kwargs[ctx_param] = self._context
+        return {**kwargs, ctx_param: self._context}
     return kwargs
 
   async def execute(self, tool_name: str, **kwargs: Any) -> Any:
@@ -274,37 +277,39 @@ class ToolRunner:
       self,
       tool_calls: list[types.ToolCall],
   ) -> list[types.ToolResult]:
-    """Executes a batch of normalized tool calls and returns structured results.
+    """Executes a batch of tool calls concurrently and returns structured results.
 
-    Returns one ToolResult per call. Unknown tools and execution failures
-    produce ToolResult with an error message rather than raising.
+    Tool calls are executed in parallel via ``asyncio.gather``.  Unknown
+    tools and execution failures produce ToolResult with an error message
+    rather than raising.
+
+    Note: tools execute concurrently; callers must not depend on
+    sequential side-effect ordering.
 
     Args:
       tool_calls: List of ToolCall objects.
 
     Returns:
-      A list of ToolResult, one per input tool call.
+      A list of ToolResult, one per input tool call, in the same order.
     """
-    results = []
-    for tc in tool_calls:
-      if tc.name not in self._tools:
-        results.append(
-            types.ToolResult(
-                name=tc.name, error=f"Unknown tool: '{tc.name}'"
-            )
-        )
-        continue
-      tool_fn = self._tools[tc.name]
-      injected_args = self._inject_context(tc.name, dict(tc.args))
+
+    async def _execute_one(tc: types.ToolCall) -> types.ToolResult:
+      # The entire body is wrapped in try/except so that nothing can
+      # escape and cause asyncio.gather to cancel sibling tasks.
       try:
+        if tc.name not in self._tools:
+          return types.ToolResult(
+              name=tc.name, error=f"Unknown tool: '{tc.name}'"
+          )
+        tool_fn = self._tools[tc.name]
+        injected_args = self._inject_context(tc.name, tc.args)
         result = await self._execute_fn(tool_fn, **injected_args)
-        results.append(types.ToolResult(name=tc.name, result=result))
+        return types.ToolResult(name=tc.name, result=result)
       except Exception as e:  # pylint: disable=broad-except
-        results.append(
-            types.ToolResult(
-                name=tc.name,
-                error=str(e),
-                exception=e,
-            )
+        return types.ToolResult(
+            name=tc.name,
+            error=str(e),
+            exception=e,
         )
-    return results
+
+    return list(await asyncio.gather(*[_execute_one(tc) for tc in tool_calls]))

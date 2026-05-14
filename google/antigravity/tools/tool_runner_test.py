@@ -381,6 +381,42 @@ class ProcessToolCallsTest(absltest.TestCase):
     self.assertIsInstance(results[0].exception, ValueError)
     self.assertIn("bad input", str(results[0].exception))
 
+  def test_mixed_batch_failure_does_not_swallow_successes(self):
+    """Verifies that one failing tool does not discard sibling results.
+
+    What: Checks that a batch with both passing and failing tools returns
+      all results — successes and errors — without swallowing any.
+    Why: With concurrent execution via asyncio.gather, a failing task
+      must not cancel siblings or lose their results.
+    How: Processes a batch of three tools (success, failure, success) and
+      asserts all three ToolResults are present with correct values.
+    """
+
+    def _good_tool(x: int) -> int:
+      return x * 10
+
+    def _bad_tool():
+      raise RuntimeError("kaboom")
+
+    runner = tool_runner.ToolRunner([_good_tool, _bad_tool])
+    results = asyncio.run(
+        runner.process_tool_calls([
+            sdk_types.ToolCall(name="_good_tool", args={"x": 1}),
+            sdk_types.ToolCall(name="_bad_tool", args={}),
+            sdk_types.ToolCall(name="_good_tool", args={"x": 2}),
+        ])
+    )
+    self.assertLen(results, 3)
+    # First call: success.
+    self.assertEqual(results[0].result, 10)
+    self.assertIsNone(results[0].error)
+    # Second call: failure.
+    self.assertEqual(results[1].error, "kaboom")
+    self.assertIsInstance(results[1].exception, RuntimeError)
+    # Third call: success (not swallowed by sibling failure).
+    self.assertEqual(results[2].result, 20)
+    self.assertIsNone(results[2].error)
+
   def test_exception_excluded_from_serialization(self):
     """Verifies that ToolResult.exception is not included in model_dump.
 
@@ -503,6 +539,26 @@ class ContextInjectionTest(absltest.TestCase):
     # No set_context call — context remains None.
     result = asyncio.run(runner.execute("_optional_ctx_tool", arg1="test"))
     self.assertEqual(result, "ctx=False")
+
+  def test_return_type_not_mistaken_for_param(self):
+    """Verifies that a ToolContext return type is not treated as a parameter.
+
+    What: Checks that get_type_hints' 'return' key is skipped.
+    Why: get_type_hints includes the return annotation under the 'return' key,
+      which could falsely match ToolContext if not filtered.
+    How: Defines a tool that returns ToolContext but takes no context param,
+      and verifies it works without injection.
+    """
+    from google.antigravity.tools import tool_context  # pylint: disable=g-import-not-at-top
+
+    def _returns_ctx(arg1: str) -> tool_context.ToolContext:
+      del arg1
+      return None  # type: ignore[return-value]
+
+    runner = tool_runner.ToolRunner([_returns_ctx])
+    # Should NOT detect a context param from the return type.
+    result = asyncio.run(runner.execute("_returns_ctx", arg1="test"))
+    self.assertIsNone(result)
 
   def test_process_tool_calls_with_context(self):
     """Verifies context injection works in batch processing.
