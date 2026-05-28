@@ -97,9 +97,11 @@ python3 -m pip install \
   --require-hashes \
   -r "${SCRIPT_DIR}/requirements-release.txt"
 
-DIST_DIR="dist"
-rm -rf "${DIST_DIR}"
-mkdir -p "${DIST_DIR}"
+if [[ -z "${PUBLISH_PREBUILT_VERSION:-}" ]]; then
+  DIST_DIR="dist"
+  rm -rf "${DIST_DIR}"
+  mkdir -p "${DIST_DIR}"
+fi
 
 # --- Platform definitions ---
 declare -A PLATFORM_TAGS=(
